@@ -1,0 +1,13 @@
+# Never commit keys
+.env
+*.key.json
+local-test-key.json
+
+# Test output
+*.out
+*.test
+coverage.*
+
+# IDEs
+.idea/
+.vscode/

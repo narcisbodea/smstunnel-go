@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Go ${{ matrix.go }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        go: ["1.22", oldstable, stable]
+        include:
+          - os: windows-latest
+            go: stable
+          - os: macos-latest
+            go: stable
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go vet ./...
+      - run: go test -race ./...
+        if: matrix.os != 'windows-latest'
+      - run: go test ./...
+        if: matrix.os == 'windows-latest'
+
+  checks:
+    name: Formatting and static checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "::error::Not formatted with gofmt: $unformatted"
+            exit 1
+          fi
+      - name: No dependencies outside the standard library
+        run: |
+          if [ -e go.sum ] || grep -q '^require' go.mod; then
+            echo "::error::The module must not depend on anything outside the standard library."
+            exit 1
+          fi
+      - run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...

@@ -1,0 +1,42 @@
+# A Go module is published by its git tag: pushing v1.2.3 is the release. This workflow tests the tagged commit, checks
+# that the tag matches Version, and asks the Go module proxy for the new version so that pkg.go.dev lists it within
+# minutes. It needs no secrets. See PUBLISHING.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: The tag matches Version
+        run: |
+          version="$(sed -n 's/^const Version = "\(.*\)"$/\1/p' client.go)"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME does not match Version $version in client.go."
+            exit 1
+          fi
+      - name: Ask the Go module proxy for the new version
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl -fsS "https://proxy.golang.org/github.com/narcisbodea/smstunnel-go/@v/${GITHUB_REF_NAME}.info"; then
+              echo
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::proxy.golang.org did not list ${GITHUB_REF_NAME}. Is the repository public?"
+          exit 1
