@@ -3,6 +3,23 @@
 All notable changes to `github.com/narcisbodea/smstunnel-go` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the module uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2026-11-15
+
+### Added
+
+- Scheduled texts. `WithSendAt(t)` makes `SendSMS` schedule the text instead of sending it now, 1 minute to 30 days
+  ahead (`sendAt` in RFC 3339, whole seconds, with the time's own offset): `SendResult.Scheduled` holds the
+  `ScheduledText` (`ID`, `SendAt`, `Status`, ...) and `MessageID` stays empty until the text goes out. At that time
+  SMSTunnel sends it as if `SendSMS` were called then with the same key. `SendSignInCode` refuses `WithSendAt`.
+- `ListScheduledTexts` (`ScheduledTextsQuery`: `ScheduledScopeWaiting` or `ScheduledScopeDone`, `Limit`, `Page`;
+  `ScheduledTextsPage` with `Waiting` and the plan's `Max`), `GetScheduledText` and `CancelScheduledText`, for the
+  texts the key scheduled.
+- `ScheduledStatus` (`ScheduledWaiting`, `ScheduledSent`, `ScheduledFailed`, `ScheduledCanceled`, `Done()`) and the
+  codes `CodeScheduleTooSoon`, `CodeScheduleTooFar`, `CodeScheduleInvalidInput`, `CodeScheduleTextTooLong`,
+  `CodeScheduleNumberNotAllowed`, `CodeScheduleSealedOnlyPhone`, `CodeScheduleEncryptedText`,
+  `CodeScheduleSignInCode`, `CodeSchedulePhoneNotFound`, `CodeScheduleLimitReached`, `CodeScheduleNotFound` and
+  `CodeScheduleNotEditable`.
+
 ## [1.0.0] - 2026-11-03
 
 ### Added

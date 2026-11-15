@@ -3,6 +3,7 @@ package smstunnel
 import (
 	"net/url"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -95,4 +96,16 @@ func checkText(message string) error {
 		return invalid("the text is empty")
 	}
 	return nil
+}
+
+// formatSendAt writes a scheduled text's time the way SMSTunnel reads it: RFC 3339 in whole seconds with the time's
+// own offset ("2026-11-16T09:00:00+02:00", "2026-11-16T07:00:00Z"). SMSTunnel takes at most 3 digits of a second,
+// and an offset in whole minutes only: a time whose zone has an offset with seconds (a local mean time before
+// standard time) is sent in UTC, so it stays the same moment. Whether it is 1 minute to 30 days ahead is left to
+// SMSTunnel's clock.
+func formatSendAt(t time.Time) string {
+	if _, offset := t.Zone(); offset%60 != 0 {
+		t = t.UTC()
+	}
+	return t.Format(time.RFC3339)
 }

@@ -16,9 +16,10 @@
 //	fmt.Println(res.MessageID)
 //
 // One call sends one text to one number: to text several people, call [Client.SendSMS] once per number. Sign-in and
-// verification codes go through [Client.SendSignInCode]. [Client.GetMessageStatus], [Client.ListPhones],
-// [Client.GetUsage] and [Client.ListReceivedTexts] read the rest; [ReceivedTextsCursor] follows received texts as
-// they arrive.
+// verification codes go through [Client.SendSignInCode]. [WithSendAt] schedules a text for later instead (1 minute
+// to 30 days ahead), and [Client.ListScheduledTexts], [Client.GetScheduledText] and [Client.CancelScheduledText]
+// follow or cancel the texts the key scheduled. [Client.GetMessageStatus], [Client.ListPhones], [Client.GetUsage]
+// and [Client.ListReceivedTexts] read the rest; [ReceivedTextsCursor] follows received texts as they arrive.
 //
 // # Errors
 //

@@ -14,7 +14,7 @@ import (
 )
 
 // Version is the version of this library. It is sent in the User-Agent header.
-const Version = "1.0.0"
+const Version = "1.1.0"
 
 // DefaultBaseURL is the address of SMSTunnel's API.
 const DefaultBaseURL = "https://smstunnel.io"
@@ -125,7 +125,7 @@ func WithTimeout(d time.Duration) Option {
 }
 
 // WithUserAgentSuffix adds your program's name and version to the User-Agent header, after this library's:
-// "smstunnel-go/1.0.0 (+https://smstunnel.io) my-tool/2.1".
+// "smstunnel-go/1.1.0 (+https://smstunnel.io) my-tool/2.1".
 func WithUserAgentSuffix(suffix string) Option {
 	return func(c *Client) error {
 		suffix = strings.TrimSpace(suffix)

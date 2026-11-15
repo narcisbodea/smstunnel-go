@@ -9,15 +9,24 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
-// A SendOption changes one text: the phone it goes out from, its country code, its idempotency key.
+const (
+	sendPath       = "api/v1/sms/send"
+	signInCodePath = "api/v1/sms/send-2fa"
+)
+
+// A SendOption changes one text: the phone it goes out from, its country code, its idempotency key, the time to
+// send it at.
 type SendOption func(*sendSettings)
 
 type sendSettings struct {
 	deviceID       string
 	countryCode    string
 	idempotencyKey string
+	sendAt         time.Time
+	scheduled      bool
 }
 
 // WithDeviceID sends the text from this phone: its ID from the dashboard (Phones, the Copy button) or [Phone.ID].
@@ -40,9 +49,24 @@ func WithIdempotencyKey(key string) SendOption {
 	return func(s *sendSettings) { s.idempotencyKey = key }
 }
 
+// WithSendAt schedules the text instead of sending it now: SMSTunnel keeps it and sends it at t, exactly as if
+// SendSMS were called with the same key at that moment. The phone, the country code and the plan's daily allowance
+// are those of that moment, and the text counts then. If the phone is offline then, the text waits for it up to 3
+// days, like any text.
+//
+// t must be 1 minute to 30 days ahead by SMSTunnel's clock; otherwise SMSTunnel answers 400 with
+// [CodeScheduleTooSoon] or [CodeScheduleTooFar]. It is sent as RFC 3339 in whole seconds, with t's own offset
+// (time.Time always has one). [SendResult.Scheduled] holds the scheduled text and MessageID stays empty: follow it
+// with [Client.GetScheduledText], or cancel it with [Client.CancelScheduledText]. Plans cap how many texts wait at
+// once ([CodeScheduleLimitReached]). Only SendSMS takes it: sign-in codes go out when they are asked for.
+func WithSendAt(t time.Time) SendOption {
+	return func(s *sendSettings) { s.sendAt, s.scheduled = t, true }
+}
+
 // SendResult is SMSTunnel's answer to a text it accepted.
 type SendResult struct {
-	// MessageID identifies the text: keep it to look up the status with GetMessageStatus.
+	// MessageID identifies the text: keep it to look up the status with GetMessageStatus. It is empty for a
+	// scheduled text (see Scheduled) until the text goes out.
 	MessageID string `json:"messageId"`
 	// Queued is true when no phone of yours was online: the text waits on your account and goes out as soon as a
 	// phone is back (within 3 days, otherwise it is marked failed). Nothing to resend.
@@ -52,8 +76,11 @@ type SendResult struct {
 	// Remaining is what is left today after this text, when SMSTunnel says.
 	Remaining *Remaining `json:"remaining,omitempty"`
 	// Replayed is true when this is the stored answer to an earlier call with the same idempotency key: no second
-	// text was sent.
+	// text was sent (or scheduled).
 	Replayed bool `json:"replayed"`
+	// Scheduled is the scheduled text when SMSTunnel scheduled it ([WithSendAt]): its ID, SendAt and Status. It is
+	// nil for a text sent now.
+	Scheduled *ScheduledText `json:"scheduled,omitempty"`
 	// Raw is SMSTunnel's whole answer, for fields this version doesn't map.
 	Raw json.RawMessage `json:"-"`
 }
@@ -120,16 +147,17 @@ func (q *Quota) UnmarshalJSON(data []byte) error {
 // SendSMS sends one text to one number (POST /api/v1/sms/send). To text several people, call it once per number.
 //
 // to is the recipient in international format (+14155550123); a local number needs a country code. message is the
-// text, up to 1600 characters.
+// text, up to 1600 characters. With [WithSendAt], SMSTunnel schedules the text instead of sending it now.
 func (c *Client) SendSMS(ctx context.Context, to, message string, opts ...SendOption) (*SendResult, error) {
-	return c.send(ctx, "api/v1/sms/send", to, message, opts)
+	return c.send(ctx, sendPath, to, message, opts)
 }
 
 // SendSignInCode sends a sign-in or verification code (POST /api/v1/sms/send-2fa). The text must contain the code as a
 // number of its own, 4 to 10 digits ("Your code is 482913" or "123-456"), and be at most 320 characters; otherwise
-// SMSTunnel answers 400. Codes have their own daily allowance. Use it for codes only.
+// SMSTunnel answers 400. Codes have their own daily allowance. Use it for codes only. It goes out now: [WithSendAt]
+// is refused.
 func (c *Client) SendSignInCode(ctx context.Context, to, message string, opts ...SendOption) (*SendResult, error) {
-	return c.send(ctx, "api/v1/sms/send-2fa", to, message, opts)
+	return c.send(ctx, signInCodePath, to, message, opts)
 }
 
 func (c *Client) send(ctx context.Context, path, to, message string, opts []SendOption) (*SendResult, error) {
@@ -155,13 +183,24 @@ func (c *Client) send(ctx context.Context, path, to, message string, opts []Send
 	if err := checkIdempotencyKey(s.idempotencyKey); err != nil {
 		return nil, err
 	}
+	sendAt := ""
+	if s.scheduled {
+		if path == signInCodePath {
+			return nil, invalid("a sign-in code can't be scheduled: send it when it is asked for")
+		}
+		if s.sendAt.IsZero() {
+			return nil, invalid("WithSendAt needs a time, 1 minute to 30 days from now")
+		}
+		sendAt = formatSendAt(s.sendAt)
+	}
 
 	body := struct {
 		To                 string `json:"to"`
 		Message            string `json:"message"`
 		DeviceID           string `json:"deviceId,omitempty"`
 		DefaultCountryCode string `json:"defaultCountryCode,omitempty"`
-	}{strings.TrimSpace(to), message, s.deviceID, countryCode}
+		SendAt             string `json:"sendAt,omitempty"`
+	}{strings.TrimSpace(to), message, s.deviceID, countryCode, sendAt}
 
 	a, err := c.call(ctx, http.MethodPost, path, nil, body, s.idempotencyKey)
 	if err != nil {
@@ -169,9 +208,11 @@ func (c *Client) send(ctx context.Context, path, to, message string, opts []Send
 	}
 
 	var wire struct {
-		MessageID string `json:"messageId"`
-		Queued    bool   `json:"queued"`
-		Data      struct {
+		MessageID   string `json:"messageId"`
+		Queued      bool   `json:"queued"`
+		Scheduled   bool   `json:"scheduled"`
+		ScheduledID string `json:"scheduledId"`
+		Data        struct {
 			MessageID string     `json:"messageId"`
 			Branded   bool       `json:"branded"`
 			Queued    bool       `json:"queued"`
@@ -191,6 +232,17 @@ func (c *Client) send(ctx context.Context, path, to, message string, opts []Send
 	}
 	if res.MessageID == "" {
 		res.MessageID = wire.MessageID
+	}
+	if wire.Scheduled {
+		// {"scheduled": true, "scheduledId", "sendAt", "data": the scheduled text}
+		var st ScheduledText
+		if err := a.decode(&st); err != nil {
+			return nil, err
+		}
+		if st.ID == "" {
+			st.ID = wire.ScheduledID
+		}
+		res.Scheduled = &st
 	}
 	return res, nil
 }

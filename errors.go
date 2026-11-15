@@ -21,7 +21,7 @@ var (
 	// ErrForbidden (403): the key lacks a permission (Code is CodePermissionRequired), or the plan doesn't include
 	// the feature.
 	ErrForbidden = errors.New("smstunnel: forbidden")
-	// ErrNotFound (404): no such message for this key.
+	// ErrNotFound (404): no such message, or scheduled text, for this key.
 	ErrNotFound = errors.New("smstunnel: not found")
 	// ErrRateLimited (429): too many requests (RetryAfter says how long to wait), or the plan's limit for the day
 	// or month is reached (no RetryAfter; the message says when texts can go out again).
@@ -50,11 +50,43 @@ const (
 	CodeIdempotencyKeyInProgress = "IDEMPOTENCY_KEY_IN_PROGRESS"
 )
 
+// Values of [APIError.Code] for scheduled texts ([WithSendAt], [Client.ListScheduledTexts] and the others).
+const (
+	// CodeScheduleTooSoon (400): the time is less than a minute away. To send the text now, leave WithSendAt out.
+	CodeScheduleTooSoon = "SCHEDULE_TOO_SOON"
+	// CodeScheduleTooFar (400): the time is more than 30 days away.
+	CodeScheduleTooFar = "SCHEDULE_TOO_FAR"
+	// CodeScheduleInvalidInput (400): the number, the text or the time can't be read.
+	CodeScheduleInvalidInput = "SCHEDULE_INVALID_INPUT"
+	// CodeScheduleTextTooLong (400): the text is longer than 1600 characters.
+	CodeScheduleTextTooLong = "SCHEDULE_TEXT_TOO_LONG"
+	// CodeScheduleNumberNotAllowed (400): texts to short codes and premium-rate numbers can't be sent.
+	CodeScheduleNumberNotAllowed = "SCHEDULE_NUMBER_NOT_ALLOWED"
+	// CodeScheduleSealedOnlyPhone (400): the phone chosen with WithDeviceID sends only end-to-end encrypted texts,
+	// which can't be scheduled.
+	CodeScheduleSealedOnlyPhone = "SCHEDULE_SEALED_ONLY_PHONE"
+	// CodeScheduleEncryptedText (400): end-to-end encrypted texts can't be scheduled.
+	CodeScheduleEncryptedText = "SCHEDULE_ENCRYPTED_TEXT"
+	// CodeScheduleSignInCode (400): sign-in codes can't be scheduled.
+	CodeScheduleSignInCode = "SCHEDULE_SIGN_IN_CODE"
+	// CodeSchedulePhoneNotFound (404): the phone chosen with WithDeviceID is not one of the key's account.
+	CodeSchedulePhoneNotFound = "SCHEDULE_PHONE_NOT_FOUND"
+	// CodeScheduleLimitReached (403): as many texts wait as the plan allows at once (the answer's "max" says how
+	// many; Free 10, Starter 50, Standard 200, Professional 500, Enterprise 1000). Wait until some go out, or cancel
+	// one.
+	CodeScheduleLimitReached = "SCHEDULE_LIMIT_REACHED"
+	// CodeScheduleNotFound (404): this key scheduled no such text (or it was done more than 30 days ago).
+	CodeScheduleNotFound = "SCHEDULE_NOT_FOUND"
+	// CodeScheduleNotEditable (409): the scheduled text already went out, failed, was cancelled or is being sent.
+	CodeScheduleNotEditable = "SCHEDULE_NOT_EDITABLE"
+)
+
 // APIError is returned when SMSTunnel answered with an error status.
 //
 // Besides the statuses with a sentinel (see [ErrUnauthorized] and the others), expect 400 (a number SMSTunnel can't
-// read, a sign-in code text without a code, a refused field), 409 and 422 (an idempotency key still in progress, or
-// reused for another text).
+// read, a sign-in code text without a code, a refused field, a time to schedule at that is too soon or too far),
+// 409 and 422 (an idempotency key still in progress, or reused for another text; a scheduled text that can't be
+// cancelled any more).
 type APIError struct {
 	// StatusCode is the HTTP status.
 	StatusCode int

@@ -41,6 +41,56 @@ func ExampleClient_SendSignInCode() {
 	}
 }
 
+func ExampleWithSendAt() {
+	client, err := smstunnel.NewClient(os.Getenv("SMSTUNNEL_API_KEY"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tomorrow := time.Now().AddDate(0, 0, 1)
+	at := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 9, 0, 0, 0, time.Local) // tomorrow at 09:00, this computer's time
+	res, err := client.SendSMS(context.Background(), "+14155550123", "Reminder: your appointment is today at 10:30.",
+		smstunnel.WithSendAt(at), smstunnel.WithIdempotencyKey("appointment-981-reminder"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("scheduled", res.Scheduled.ID, "for", res.Scheduled.SendAt.Local().Format(time.RFC1123))
+}
+
+func ExampleClient_ListScheduledTexts() {
+	client, err := smstunnel.NewClient(os.Getenv("SMSTUNNEL_API_KEY"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	page, err := client.ListScheduledTexts(context.Background(), smstunnel.ScheduledTextsQuery{}) // the ones still waiting, soonest first
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, text := range page.Texts {
+		fmt.Println(text.ID, text.SendAt.Local().Format(time.RFC1123), text.To)
+	}
+	fmt.Printf("%d of the %d texts your plan lets wait at once\n", page.Waiting, page.Max)
+}
+
+func ExampleClient_CancelScheduledText() {
+	client, err := smstunnel.NewClient(os.Getenv("SMSTUNNEL_API_KEY"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	text, err := client.CancelScheduledText(context.Background(), "6738c0ffee0123456789abcd")
+	var apiErr *smstunnel.APIError
+	switch {
+	case err == nil:
+		fmt.Println(text.Status) // canceled
+	case errors.As(err, &apiErr) && apiErr.Code == smstunnel.CodeScheduleNotEditable:
+		fmt.Println("too late: it already went out, failed or was cancelled")
+	default:
+		log.Fatal(err)
+	}
+}
+
 func ExampleClient_GetMessageStatus() {
 	client, err := smstunnel.NewClient(os.Getenv("SMSTUNNEL_API_KEY"))
 	if err != nil {

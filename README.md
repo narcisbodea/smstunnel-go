@@ -99,6 +99,34 @@ status.ErrorMessage  // why it failed
 
 `StateUnconfirmed` means the phone handed the text to the SIM but never got the confirmation: it most likely went out, and it is never resent automatically. Don't resend it yourself.
 
+### Scheduled texts
+
+`WithSendAt` hands the text to SMSTunnel now and has it sent later, 1 minute to 30 days ahead:
+
+```go
+tomorrow := time.Now().AddDate(0, 0, 1)
+at := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 9, 0, 0, 0, time.Local) // tomorrow at 09:00, this computer's time
+
+res, err := client.SendSMS(ctx, "+14155550123", "Reminder: your appointment is today at 10:30.",
+	smstunnel.WithSendAt(at),
+	smstunnel.WithIdempotencyKey("appointment-981-reminder"))
+res.Scheduled.ID     // keep it to look the text up or cancel it
+res.Scheduled.SendAt // time.Time
+res.MessageID        // "" until the text goes out
+
+page, err := client.ListScheduledTexts(ctx, smstunnel.ScheduledTextsQuery{}) // the ones still waiting, soonest first
+for _, text := range page.Texts {
+	fmt.Println(text.ID, text.SendAt.Local(), text.To, text.Status)
+}
+
+_, err = client.CancelScheduledText(ctx, res.Scheduled.ID) // while it still waits
+```
+
+- At that time SMSTunnel sends the text exactly as if your program had called `SendSMS` then, with the same key: the phone, the country code and the plan's daily allowance are those of that moment, and the text counts then. If the phone is offline, the text waits for it up to 3 days, like any text.
+- Plans cap how many texts wait at once: Free 10, Starter 50, Standard 200, Professional 500, Enterprise 1000 (`page.Waiting` and `page.Max`; over it, a 403 with `CodeScheduleLimitReached`).
+- `ListScheduledTexts` lists only the texts this key scheduled. `Scope: smstunnel.ScheduledScopeDone` lists the ones sent, failed or cancelled in the last 30 days, newest first. `GetScheduledText` reads one: `Status` is `ScheduledWaiting`, `ScheduledSent`, `ScheduledFailed` or `ScheduledCanceled`; once sent, `MessageID` works with `GetMessageStatus`, and `Error` says why one failed (for example `limit_reached`).
+- A time less than a minute or more than 30 days away is refused (400, `CodeScheduleTooSoon` or `CodeScheduleTooFar`); cancelling a text that already went out is a 409 with `CodeScheduleNotEditable`. Sign-in codes can't be scheduled.
+
 ### Your phones and your usage
 
 ```go
@@ -187,12 +215,12 @@ Every method returns an error when the call doesn't go through:
 | `errors.Is(err, smstunnel.ErrForbidden)` | 403: the key lacks a permission (`Code` is `PERMISSION_REQUIRED` and `Permission` names it, e.g. `sms:inbox`), or the plan doesn't include the feature. |
 | `errors.Is(err, smstunnel.ErrRateLimited)` | 429: too many requests (`RetryAfter` says how long to wait), or the plan's limit for the day or month is reached (no `RetryAfter`; the message says when texts can go out again). |
 | `errors.Is(err, smstunnel.ErrServer)` | 5xx: a problem on SMSTunnel's side. |
-| `errors.Is(err, smstunnel.ErrNotFound)` | 404: no such message for this key. |
+| `errors.Is(err, smstunnel.ErrNotFound)` | 404: no such message, or scheduled text, for this key. |
 | `*smstunnel.ConnectionError` | No answer: SMSTunnel could not be reached, or `Timeout()` when it didn't answer in time. |
 | `errors.Is(err, smstunnel.ErrInvalidInput)` | An argument was refused before anything was sent: an empty number, two numbers in one, a country code that isn't one. |
 | `errors.Is(err, context.Canceled)` | The context was cancelled. |
 
-Other statuses come as an `*APIError` too: 400 (a number SMSTunnel can't read, a code text without a code), 409 and 422 (an idempotency key still in progress, or reused for another text).
+Other statuses come as an `*APIError` too: 400 (a number SMSTunnel can't read, a code text without a code, a time to schedule at that is too soon or too far), 409 and 422 (an idempotency key still in progress, or reused for another text; a scheduled text that can't be cancelled any more).
 
 ```go
 _, err := client.SendSMS(ctx, number, text, smstunnel.WithIdempotencyKey(textID))
@@ -251,6 +279,7 @@ Use the module github.com/narcisbodea/smstunnel-go (go get github.com/narcisbode
 API facts:
 - client.SendSMS(ctx, to, message, smstunnel.WithDeviceID(id), smstunnel.WithCountryCode("+40"), smstunnel.WithIdempotencyKey(key)) calls POST https://smstunnel.io/api/v1/sms/send with the header X-API-Key and the JSON body {"to", "message", "deviceId"?, "defaultCountryCode"?}. It returns MessageID and Queued.
 - One recipient per call. To text several people, call it once per number.
+- smstunnel.WithSendAt(t) schedules the text 1 minute to 30 days ahead (body "sendAt", RFC 3339 with an offset): res.Scheduled.ID; client.ListScheduledTexts, client.GetScheduledText and client.CancelScheduledText (GET and DELETE /api/v1/sms/scheduled/{id}) follow or cancel it. It counts on the plan when it goes out.
 - client.SendSignInCode (POST /api/v1/sms/send-2fa) is only for sign-in codes: the text must contain a code of 4 to 10 digits standing on its own (e.g. 482913 or 123-456), at most 320 characters; it uses a separate allowance.
 - Numbers in international format (+14155550123). A country code (WithCountryCode, or WithDefaultCountryCode on the client) completes numbers written without + or 00.
 - Limits: 30 sends a minute per key, 1600 characters a text.
