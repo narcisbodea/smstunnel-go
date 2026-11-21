@@ -17,7 +17,7 @@ const (
 	// ScheduledWaiting ("scheduled"): waiting for its time. It can still be cancelled.
 	ScheduledWaiting ScheduledStatus = "scheduled"
 	// ScheduledSent: at its time SMSTunnel sent it as if SendSMS had been called then. ScheduledText.MessageID
-	// identifies that text: GetMessageStatus says whether the phone sent it and whether it was delivered.
+	// identifies that text: GetMessageStatus says whether the phone sent it.
 	ScheduledSent ScheduledStatus = "sent"
 	// ScheduledFailed: it could not be sent at its time; ScheduledText.Error says why.
 	ScheduledFailed ScheduledStatus = "failed"

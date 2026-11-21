@@ -17,9 +17,10 @@ type State string
 const (
 	// StatePending: waiting for the phone, for example while it is offline.
 	StatePending State = "pending"
-	// StateSent: the phone sent it.
+	// StateSent: the phone sent it. This is the last good state today: the app gets no delivery reports, so a text
+	// that went out stays sent.
 	StateSent State = "sent"
-	// StateDelivered: the recipient's network confirmed delivery.
+	// StateDelivered: reserved for a delivery report. The app gets none today, so the texts you send don't reach it.
 	StateDelivered State = "delivered"
 	// StateFailed: it could not be sent; MessageStatus.ErrorMessage says why.
 	StateFailed State = "failed"
@@ -28,9 +29,10 @@ const (
 	StateUnconfirmed State = "unconfirmed"
 )
 
-// Final reports whether the state won't change any more: delivered, failed or unconfirmed.
+// Final reports whether there is nothing more to wait for: sent, delivered, failed or unconfirmed. A text the phone
+// sent stays StateSent, because the app gets no delivery reports.
 func (s State) Final() bool {
-	return s == StateDelivered || s == StateFailed || s == StateUnconfirmed
+	return s == StateSent || s == StateDelivered || s == StateFailed || s == StateUnconfirmed
 }
 
 // MessageStatus is where one text is now.
@@ -43,7 +45,7 @@ type MessageStatus struct {
 	State State `json:"state"`
 	// SentAt is when the phone sent it, or nil.
 	SentAt *time.Time `json:"sentAt,omitempty"`
-	// DeliveredAt is when delivery was confirmed, or nil.
+	// DeliveredAt is when a delivery report arrived. Reserved, like StateDelivered: nil for the texts you send today.
 	DeliveredAt *time.Time `json:"deliveredAt,omitempty"`
 	// ErrorMessage says why it failed, or why it is unconfirmed.
 	ErrorMessage string `json:"errorMessage,omitempty"`

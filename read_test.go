@@ -22,7 +22,7 @@ func TestGetMessageStatus(t *testing.T) {
 	if r.Method != http.MethodGet || r.RequestURI != "/api/v1/sms/status/m1" || r.Body != "" || r.Header.Get("Content-Type") != "" {
 		t.Errorf("request = %s %s, body %q, content type %q", r.Method, r.RequestURI, r.Body, r.Header.Get("Content-Type"))
 	}
-	if st.ID != "m1" || st.PhoneNumber != "+14155550123" || st.State != StateSent || st.State.Final() {
+	if st.ID != "m1" || st.PhoneNumber != "+14155550123" || st.State != StateSent || !st.State.Final() {
 		t.Errorf("status = %+v", st)
 	}
 	if want := time.Date(2026, 11, 3, 19, 41, 46, 622_000_000, time.UTC); st.SentAt == nil || !st.SentAt.Equal(want) {
@@ -42,6 +42,7 @@ func TestGetMessageStatusReadsTheRealState(t *testing.T) {
 		{`{"status":"failed","unconfirmed":true,"deliveryStatus":"unconfirmed","errorMessage":"Not confirmed by the phone"}`, StateUnconfirmed, true},
 		{`{"status":"failed","unconfirmed":true}`, StateUnconfirmed, true},
 		{`{"status":"failed","deliveryStatus":"failed"}`, StateFailed, true},
+		{`{"status":"sent","deliveryStatus":"sent"}`, StateSent, true},
 		{`{"status":"delivered"}`, StateDelivered, true},
 		{`{"status":"pending","deliveryStatus":"pending"}`, StatePending, false},
 		{`{"status":"sent","deliveryStatus":"read-by-martians"}`, State("read-by-martians"), false},
@@ -55,6 +56,27 @@ func TestGetMessageStatusReadsTheRealState(t *testing.T) {
 		}
 		if st.State != tc.state || st.State.Final() != tc.final || st.ID != "m1" {
 			t.Errorf("%s: state %q final %v id %q, want %q %v", tc.data, st.State, st.State.Final(), st.ID, tc.state, tc.final)
+		}
+	}
+}
+
+func TestStateFinal(t *testing.T) {
+	cases := []struct {
+		state State
+		final bool
+	}{
+		{StatePending, false},
+		{StateSent, true},
+		{StateDelivered, true},
+		{StateFailed, true},
+		{StateUnconfirmed, true},
+		{State("queued"), false},
+		{State("read-by-martians"), false},
+		{State(""), false},
+	}
+	for _, tc := range cases {
+		if got := tc.state.Final(); got != tc.final {
+			t.Errorf("State(%q).Final() = %v, want %v", tc.state, got, tc.final)
 		}
 	}
 }

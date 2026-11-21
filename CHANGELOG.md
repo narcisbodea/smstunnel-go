@@ -3,6 +3,20 @@
 All notable changes to `github.com/narcisbodea/smstunnel-go` are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the module uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-11-21
+
+### Fixed
+
+- `State.Final()` is now `true` for `StateSent`. The SMSTunnel app gets no delivery reports, so a text that went out
+  stays sent, and code waiting "until final" never stopped. `StateSent` is the last good state today; `StateDelivered`
+  is reserved and still counts as final. `StatePending` and states this version doesn't know are still not final.
+- The docs no longer promise a delivery confirmation.
+
+### Compatibility
+
+- Only `Final()` changes. If your code waits for `Final()` and then looks for `StateDelivered`, treat `StateSent` as
+  success too.
+
 ## [1.1.0] - 2026-11-15
 
 ### Added

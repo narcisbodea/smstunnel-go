@@ -92,10 +92,12 @@ The text must contain the code as a number of its own, 4 to 10 digits (`482913` 
 status, err := client.GetMessageStatus(ctx, res.MessageID) // needs sms:read
 
 status.State         // smstunnel.StatePending, StateSent, StateDelivered, StateFailed or StateUnconfirmed
-status.State.Final() // true once it won't change: delivered, failed or unconfirmed
+status.State.Final() // true once there's nothing more to wait for: sent, delivered, failed or unconfirmed
 status.SentAt        // *time.Time
 status.ErrorMessage  // why it failed
 ```
+
+`StateSent` is the last good state today: the SMSTunnel app gets no delivery reports, so a text that went out stays `StateSent`. `StateDelivered` is reserved.
 
 `StateUnconfirmed` means the phone handed the text to the SIM but never got the confirmation: it most likely went out, and it is never resent automatically. Don't resend it yourself.
 
